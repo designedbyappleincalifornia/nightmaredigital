@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Chat with the Bot</title>
+    <style>
+        #chat-container {
+            width: 500px;
+            height: 400px;
+            border: 1px solid black;
+            overflow-y: auto;
+        }
+        .user-message, .bot-message {
+            padding: 10px;
+            margin: 5px;
+            border-radius: 5px;
+        }
+        .user-message {
+            background-color: #f1f1f1;
+        }
+        .bot-message {
+            background-color: #e6e6e6;
+        }
+    </style>
+</head>
+<body>
+    <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+
+    <!-- Adding a dummy form to generate CSRF token -->
+    <form style="display:none">
+        {% csrf_token %}
+    </form>
+    <div id="chat-container">
+        <!-- Messages will appear here -->
+    </div>
+    <input type="text" id="user-input">
+    <button onclick="sendMessage()">Send</button>
+
+    <script>
+        async function sendMessage() {
+            const userInput = document.getElementById("user-input").value;
+            const chatContainer = document.getElementById("chat-container");
+
+            const userMessageDiv = document.createElement("div");
+            userMessageDiv.className = "user-message";
+            userMessageDiv.textContent = `You said: ${userInput}`;
+            chatContainer.appendChild(userMessageDiv);
+
+            const csrfToken = document.querySelector('[name="csrfmiddlewaretoken"]').value;
+
+
+            const response = await fetch('/chat/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ 'message': userInput })
+            });
+
+            const data = await response.json();
+
+            const botMessageDiv = document.createElement("div");
+            botMessageDiv.className = "bot-message";
+            botMessageDiv.textContent = data.message;
+            chatContainer.appendChild(botMessageDiv);
+
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+    </script>
+</body>
+</html>
