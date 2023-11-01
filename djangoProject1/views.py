@@ -1,4 +1,6 @@
 import json
+import os
+
 from django.http import JsonResponse, HttpResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
@@ -7,32 +9,39 @@ import requests
 # Initialize your system prompt here
 base_system_prompt = "You are a powerful AI called Urgo"
 dynamic_system_prompt = base_system_prompt
-past_system_prompts = ""
+
+# Initialize the conversation history
+conversation_history = []
 
 # Your OpenAI API key here
-OPENAI_KEY = "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"
+OPENAI_KEY = os.environ.get('OPENAI_KEY', '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')
 
 
 @csrf_exempt
 def chat_handler(request):
+    global conversation_history  # Make sure to use the global variable
+
     if request.method == 'POST':
         data = json.loads(request.body.decode('utf-8'))
-
         user_message = data.get('message', '')
+
+        # Add user's message to conversation history
+        conversation_history.append({"role": "user", "content": user_message})
 
         messages = [
             {"role": "system", "content": dynamic_system_prompt},
             {"role": "user", "content": user_message}
         ]
 
-        print(f"Sending these messages to OpenAI: {messages}") #Debug print 1
-
         # Make API call here
         response_data = make_openai_request(messages)
-
-        print(f"Received this from OpenAI: {response_data}")  # Debug print 2
-
         bot_message = response_data["choices"][0]["message"]["content"]
+
+        # Add bot's message to conversation history
+        conversation_history.append({"role": "assistant", "content": bot_message})
+
+        # Update the system prompt
+        update_system_prompt()
 
         return JsonResponse({'message': bot_message})
 
@@ -52,14 +61,10 @@ def make_openai_request(messages):
 
     data = {
         "model": "gpt-3.5-turbo",
-        "messages": messages,
-        "temperature": 0.9,
-        "stream": False
+        "messages": messages
     }
 
     response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=data)
-
-    print(f"API response: {response.json()}")  # Debug print 3
 
     if response.status_code != 200:
         raise Exception(f"OpenAI request failed: {response.json()['error']['message']}")
@@ -68,18 +73,25 @@ def make_openai_request(messages):
 
 
 # Update the dynamic system prompt
-def update_system_prompt(user_history):
-    global dynamic_system_prompt, past_system_prompts
+def update_system_prompt():
+    global dynamic_system_prompt, conversation_history
 
-    messages = [
-        {"role": "system", "content": dynamic_system_prompt},
-        {"role": "user",
-         "content": f'Based on the user\'s history of saying "{user_history}", tell me how to subtly update my system prompt.'}
-    ]
+    # Ask the model for advice based on the entire conversation
+    conversation_history.append({"role": "user",
+                                 "content": f'Tell me how to subtly update my system prompt based on the entire conversation so far.'})
 
-    advice_data = make_openai_request(messages)
+    advice_data = make_openai_request(conversation_history)
     advice = advice_data["choices"][0]["message"]["content"]
 
-    # Update past and dynamic prompts
-    past_system_prompts += advice
-    dynamic_system_prompt = base_system_prompt + past_system_prompts
+    # Extract the new system prompt suggestion from the advice
+    start_idx = advice.find('"') + 1
+    end_idx = advice.rfind('"')
+    new_system_prompt = advice[start_idx:end_idx]
+
+    # Combine base and new prompts
+    dynamic_system_prompt = base_system_prompt + " " + new_system_prompt
+
+    print(f"\033[91mUpdated system prompt: {dynamic_system_prompt}\033[0m")  # Print in red
+
+    # Remove the last user's message asking for advice, to avoid confusion in future interactions
+    conversation_history.pop()
